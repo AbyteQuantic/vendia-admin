@@ -21,7 +21,7 @@ export default function TenantsPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(0);
 
-  const tenants = response?.data ?? [];
+  const tenants = useMemo(() => response?.data ?? [], [response]);
 
   const filtered = useMemo(() => {
     let result = tenants;

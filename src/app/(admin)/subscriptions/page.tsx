@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { CreditCard, Users } from "lucide-react";
 import { StatCardAdmin } from "@/components/admin/stat-card-admin";
 import { Badge } from "@/components/ui/badge";
-import { SkeletonCard, SkeletonTable } from "@/components/ui/skeleton";
+import { SkeletonCard } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
 import { useApi } from "@/hooks/use-api";
 import type { AdminTenant } from "@/types/admin";
@@ -18,7 +18,7 @@ const badgeVariant: Record<string, "success" | "warning" | "danger" | "default">
 
 export default function SubscriptionsPage() {
   const { data: response, error, isLoading, mutate } = useApi<{ data: AdminTenant[] }>("/api/v1/admin/tenants");
-  const tenants = response?.data ?? [];
+  const tenants = useMemo(() => response?.data ?? [], [response]);
 
   const stats = useMemo(() => {
     const counts = { trial: 0, active: 0, suspended: 0, cancelled: 0 };

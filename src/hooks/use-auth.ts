@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { AuthState, LoginRequest, AuthResponse } from "@/types/auth";
 import { getAuthState, setAuthState, clearAuthState } from "@/lib/auth";
@@ -8,13 +8,8 @@ import { apiPost } from "@/lib/api";
 
 export function useAuth() {
   const router = useRouter();
-  const [auth, setAuth] = useState<AuthState | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setAuth(getAuthState());
-    setLoading(false);
-  }, []);
+  const [auth, setAuth] = useState<AuthState | null>(() => getAuthState());
+  const loading = false;
 
   const login = useCallback(
     async (credentials: LoginRequest) => {
