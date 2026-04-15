@@ -144,10 +144,12 @@ export default function FiadoPage() {
             </p>
           </div>
 
-          {/* Phone confirmation */}
+          {/* Phone confirmation - only if customer has phone, otherwise ask for it */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Confirme su numero de celular
+              {data.customer_phone
+                ? "Confirme su numero de celular"
+                : "Ingrese su numero de celular"}
             </label>
             <input
               type="tel"
@@ -156,6 +158,11 @@ export default function FiadoPage() {
               placeholder="Ej: 3001234567"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-lg focus:border-amber-500 focus:outline-none transition"
             />
+            {!data.customer_phone && (
+              <p className="text-xs text-gray-400 mt-1">
+                Su numero quedara registrado para futuros fiados
+              </p>
+            )}
           </div>
 
           {/* Terms */}
