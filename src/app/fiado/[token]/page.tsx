@@ -5,14 +5,27 @@ import { useParams } from "next/navigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://vendia-api.onrender.com";
 
+interface TimelineEntry {
+  type: "debt" | "payment";
+  amount: number;
+  note: string;
+  created_at: string;
+}
+
 interface FiadoData {
   business_name: string;
   business_logo: string;
   customer_name: string;
   customer_phone: string;
   total_amount: number;
+  paid_amount: number;
+  balance: number;
+  description: string;
   fiado_status: string;
+  status: string;
   created_at: string;
+  accepted_at: string | null;
+  timeline: TimelineEntry[];
 }
 
 function formatCOP(amount: number): string {
@@ -23,6 +36,17 @@ function formatCOP(amount: number): string {
   }).format(amount);
 }
 
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("es-CO", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function FiadoPage() {
   const params = useParams();
   const token = params.token as string;
@@ -31,11 +55,10 @@ export default function FiadoPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [phone, setPhone] = useState("");
-  const [accepted, setAccepted] = useState(false);
   const [termsChecked, setTermsChecked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
+  const fetchData = () => {
     if (!token) return;
     fetch(`${API_URL}/api/v1/public/fiado/${token}`)
       .then((res) => res.json())
@@ -43,14 +66,15 @@ export default function FiadoPage() {
         if (json.data) {
           setData(json.data);
           if (json.data.customer_phone) setPhone(json.data.customer_phone);
-          if (json.data.fiado_status === "accepted") setAccepted(true);
         } else {
           setError("Fiado no encontrado");
         }
       })
       .catch(() => setError("Error al cargar los datos"))
       .finally(() => setLoading(false));
-  }, [token]);
+  };
+
+  useEffect(() => { fetchData(); }, [token]);
 
   const handleAccept = async () => {
     if (!termsChecked || !phone) return;
@@ -61,10 +85,10 @@ export default function FiadoPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone_confirm: phone, accept_terms: true }),
       });
-      const json = await res.json();
       if (res.ok) {
-        setAccepted(true);
+        fetchData();
       } else {
+        const json = await res.json();
         setError(json.error || "Error al aceptar");
       }
     } catch {
@@ -86,7 +110,7 @@ export default function FiadoPage() {
     return (
       <div className="min-h-screen bg-red-50 flex items-center justify-center p-6">
         <div className="bg-white rounded-3xl shadow-lg p-8 max-w-md w-full text-center">
-          <div className="text-5xl mb-4">&#x26A0;&#xFE0F;</div>
+          <div className="text-5xl mb-4">⚠️</div>
           <h1 className="text-2xl font-bold text-red-600 mb-2">Error</h1>
           <p className="text-gray-600">{error}</p>
         </div>
@@ -96,40 +120,146 @@ export default function FiadoPage() {
 
   if (!data) return null;
 
-  if (accepted) {
+  // ══════════════════════════════════════════════════════════════════════════
+  // ACCEPTED → Account Statement with Timeline
+  // ══════════════════════════════════════════════════════════════════════════
+  if (data.fiado_status === "accepted") {
+    const isClosed = data.status === "closed" || data.balance <= 0;
+
     return (
-      <div className="min-h-screen bg-green-50 flex items-center justify-center p-6">
-        <div className="bg-white rounded-3xl shadow-lg p-8 max-w-md w-full text-center">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <svg className="w-10 h-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-            </svg>
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-6 pb-10 text-white">
+          <p className="text-sm text-amber-100 opacity-80">Tu cuenta en</p>
+          <h1 className="text-2xl font-bold">{data.business_name}</h1>
+          <p className="text-amber-100 mt-1">Hola, {data.customer_name}</p>
+        </div>
+
+        {/* Balance card */}
+        <div className="px-4 -mt-6">
+          <div className={`rounded-2xl p-6 shadow-lg text-center ${
+            isClosed ? "bg-green-50 border-2 border-green-200" : "bg-white"
+          }`}>
+            <p className="text-sm text-gray-500 mb-1">
+              {isClosed ? "✅ Cuenta saldada" : "Saldo pendiente"}
+            </p>
+            <p className={`text-5xl font-extrabold ${
+              isClosed ? "text-green-600" : "text-amber-700"
+            }`}>
+              {formatCOP(Math.max(data.balance, 0))}
+            </p>
+            {!isClosed && data.total_amount > 0 && (
+              <div className="mt-4 bg-gray-100 rounded-xl p-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Total fiado</span>
+                  <span className="font-semibold text-gray-700">{formatCOP(data.total_amount)}</span>
+                </div>
+                <div className="flex justify-between text-sm mt-1">
+                  <span className="text-gray-500">Total abonado</span>
+                  <span className="font-semibold text-green-600">{formatCOP(data.paid_amount)}</span>
+                </div>
+                {/* Progress bar */}
+                <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-green-500 rounded-full transition-all"
+                    style={{ width: `${Math.min((data.paid_amount / data.total_amount) * 100, 100)}%` }}
+                  />
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  {Math.round((data.paid_amount / data.total_amount) * 100)}% pagado
+                </p>
+              </div>
+            )}
+            {isClosed && (
+              <div className="mt-4 inline-flex items-center gap-2 bg-green-100 text-green-700 px-4 py-2 rounded-full text-sm font-semibold">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+                Cuenta cerrada — ¡Gracias por pagar!
+              </div>
+            )}
           </div>
-          <h1 className="text-2xl font-bold text-green-700 mb-2">Deuda Aceptada</h1>
-          <p className="text-gray-600 text-lg mb-4">
-            Ya puede retirar sus productos en <strong>{data.business_name}</strong>
-          </p>
-          <div className="bg-green-50 rounded-2xl p-4 border border-green-200">
-            <p className="text-sm text-green-700">Total de la deuda</p>
-            <p className="text-3xl font-bold text-green-800">{formatCOP(data.total_amount)}</p>
+        </div>
+
+        {/* Timeline */}
+        <div className="px-4 mt-8 pb-8">
+          <h2 className="text-lg font-bold text-gray-800 mb-4">
+            📋 Movimientos
+          </h2>
+
+          {(!data.timeline || data.timeline.length === 0) ? (
+            <div className="bg-white rounded-xl p-6 text-center text-gray-400">
+              Sin movimientos aun
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {data.timeline.map((entry, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  {/* Icon */}
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 mt-1 ${
+                    entry.type === "debt"
+                      ? "bg-red-100"
+                      : "bg-green-100"
+                  }`}>
+                    {entry.type === "debt" ? (
+                      <span className="text-red-600 text-lg">🛒</span>
+                    ) : (
+                      <span className="text-green-600 text-lg">💰</span>
+                    )}
+                  </div>
+
+                  {/* Card */}
+                  <div className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-semibold text-gray-800 text-base">
+                          {entry.type === "debt" ? "Compra fiada" : "Abono recibido"}
+                        </p>
+                        {entry.note && (
+                          <p className="text-sm text-gray-500 mt-0.5">{entry.note}</p>
+                        )}
+                        <p className="text-xs text-gray-400 mt-1">
+                          {formatDate(entry.created_at)}
+                        </p>
+                      </div>
+                      <p className={`text-xl font-bold ${
+                        entry.type === "debt" ? "text-red-600" : "text-green-600"
+                      }`}>
+                        {entry.type === "debt" ? "+" : "-"}{formatCOP(entry.amount)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-8 text-center">
+            <p className="text-xs text-gray-400">
+              Aceptado el {data.accepted_at ? formatDate(data.accepted_at) : "—"}
+            </p>
+            <p className="text-xs text-gray-300 mt-1">
+              Este extracto se actualiza en tiempo real
+            </p>
           </div>
         </div>
       </div>
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // PENDING → Acceptance Form
+  // ══════════════════════════════════════════════════════════════════════════
   return (
     <div className="min-h-screen bg-amber-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl shadow-xl max-w-md w-full overflow-hidden">
-        {/* Header */}
         <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-6 text-white text-center">
-          <div className="text-4xl mb-2">&#x1F4CB;</div>
+          <div className="text-4xl mb-2">📋</div>
           <h1 className="text-xl font-bold">Solicitud de Fiado</h1>
           <p className="text-amber-100 text-sm mt-1">{data.business_name}</p>
         </div>
 
         <div className="p-6 space-y-5">
-          {/* Summary */}
           <div className="bg-amber-50 rounded-2xl p-5 border border-amber-200 text-center">
             <p className="text-sm text-amber-700 mb-1">Monto a fiar</p>
             <p className="text-4xl font-extrabold text-amber-800">
@@ -137,14 +267,11 @@ export default function FiadoPage() {
             </p>
           </div>
 
-          <div className="text-center text-gray-600">
-            <p className="text-lg">
-              <strong>{data.business_name}</strong> le esta fiando productos a{" "}
-              <strong>{data.customer_name}</strong>
-            </p>
-          </div>
+          <p className="text-center text-gray-600 text-lg">
+            <strong>{data.business_name}</strong> le esta fiando productos a{" "}
+            <strong>{data.customer_name}</strong>
+          </p>
 
-          {/* Phone confirmation - only if customer has phone, otherwise ask for it */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
               {data.customer_phone
@@ -156,24 +283,18 @@ export default function FiadoPage() {
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="Ej: 3001234567"
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-lg focus:border-amber-500 focus:outline-none transition"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-lg focus:border-amber-500 focus:outline-none"
             />
-            {!data.customer_phone && (
-              <p className="text-xs text-gray-400 mt-1">
-                Su numero quedara registrado para futuros fiados
-              </p>
-            )}
           </div>
 
-          {/* Terms */}
           <label className="flex items-start gap-3 cursor-pointer">
             <input
               type="checkbox"
               checked={termsChecked}
               onChange={(e) => setTermsChecked(e.target.checked)}
-              className="mt-1 w-5 h-5 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+              className="mt-1 w-5 h-5 rounded border-gray-300 text-amber-600"
             />
-            <span className="text-sm text-gray-600 leading-relaxed">
+            <span className="text-sm text-gray-600">
               Acepto la deuda por {formatCOP(data.total_amount)} y autorizo el
               tratamiento de mis datos personales conforme a la ley de habeas data.
             </span>
@@ -185,27 +306,14 @@ export default function FiadoPage() {
             </div>
           )}
 
-          {/* Accept button */}
           <button
             onClick={handleAccept}
             disabled={!termsChecked || !phone || submitting}
-            className="w-full py-4 rounded-2xl text-xl font-bold text-white transition-all
+            className="w-full py-4 rounded-2xl text-xl font-bold text-white
               bg-gradient-to-r from-amber-500 to-orange-500
-              hover:from-amber-600 hover:to-orange-600
-              disabled:opacity-40 disabled:cursor-not-allowed
-              shadow-lg shadow-amber-200"
+              disabled:opacity-40 shadow-lg shadow-amber-200"
           >
-            {submitting ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Procesando...
-              </span>
-            ) : (
-              "Aceptar Deuda"
-            )}
+            {submitting ? "Procesando..." : "Aceptar Deuda"}
           </button>
 
           <p className="text-xs text-gray-400 text-center">
